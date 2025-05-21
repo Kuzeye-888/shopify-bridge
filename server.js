@@ -1,34 +1,61 @@
-const express = require('express');
-const axios = require('axios');
-require('dotenv').config();
-
+const express = require("express");
+const bodyParser = require("body-parser");
+const axios = require("axios");
 const app = express();
-app.use(express.json());
+const port = process.env.PORT || 10000;
 
-app.use((req, res, next) => {
-  const key = req.headers['x-api-key'];
-  if (key !== process.env.API_KEY) {
-    return res.status(401).json({ error: 'Unauthorized' });
+require("dotenv").config();
+
+const API_KEY = process.env.API_KEY;
+const SHOPIFY_STORE = process.env.SHOPIFY_STORE;
+const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
+
+app.use(bodyParser.json());
+
+app.post("/shopify", async (req, res) => {
+  const key = req.headers["x-api-key"];
+
+  if (key !== API_KEY) {
+    return res.status(401).json({ error: "Unauthorized" });
   }
-  next();
-});
 
-app.post('/shopify', async (req, res) => {
   const { action, payload } = req.body;
+
   try {
-    if (action === 'get_products') {
-      const response = await axios.get(`https://${process.env.SHOPIFY_STORE}/admin/api/2023-10/products.json`, {
-        headers: {
-          'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN
+    if (action === "get_products") {
+      const response = await axios.get(
+        `https://${SHOPIFY_STORE}/admin/api/2023-07/products.json`,
+        {
+          headers: {
+            "X-Shopify-Access-Token": SHOPIFY_ACCESS_TOKEN,
+            "Content-Type": "application/json",
+          },
         }
-      });
-      return res.json(response.data);
+      );
+      return res.json({ products: response.data.products });
     }
-    res.status(400).json({ error: 'Unknown action' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+
+    if (action === "order_paid") {
+      const order = payload;
+
+      console.log("✅ New paid order received:", order.id);
+
+      return res.json({
+        status: "Order received",
+        order_id: order.id,
+        customer: order.customer?.email,
+        total: order.total_price,
+        currency: order.currency,
+      });
+    }
+
+    return res.status(400).json({ error: "Unknown action" });
+  } catch (error) {
+    console.error("❌ Error:", error.message);
+    return res.status(500).json({ error: "Server error", details: error.message });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Shopify bridge running on port ${PORT}`));
+app.listen(port, () => {
+  console.log(`Shopify bridge running on port ${port}`);
+});
