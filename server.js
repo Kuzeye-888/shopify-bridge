@@ -42,7 +42,6 @@ app.post("/shopify", async (req, res) => {
       const order = payload;
       console.log("✅ New paid order received:", order.id);
 
-      // Step 1: Load existing orders from file
       let orders = [];
       try {
         const data = fs.readFileSync("pending_orders.json", "utf8");
@@ -51,7 +50,6 @@ app.post("/shopify", async (req, res) => {
         orders = [];
       }
 
-      // Step 2: Add new order
       orders.push({
         order_id: order.id,
         customer: order.customer?.email,
@@ -60,12 +58,53 @@ app.post("/shopify", async (req, res) => {
         created_at: new Date().toISOString()
       });
 
-      // Step 3: Save back to file
       fs.writeFileSync("pending_orders.json", JSON.stringify(orders, null, 2));
 
       return res.json({
         status: "Order received and logged",
         order_id: order.id
+      });
+    }
+
+    // ✅ FULFILL ORDER: Move to fulfilled_orders.json
+    if (action === "fulfill_order") {
+      const { order_id } = payload;
+
+      // Load pending orders
+      let pending = [];
+      try {
+        pending = JSON.parse(fs.readFileSync("pending_orders.json", "utf8"));
+      } catch (err) {
+        return res.status(404).json({ error: "No pending orders found." });
+      }
+
+      // Find and remove order
+      const index = pending.findIndex(o => o.order_id === order_id);
+      if (index === -1) {
+        return res.status(404).json({ error: "Order not found in pending list." });
+      }
+
+      const order = pending.splice(index, 1)[0];
+
+      // Save updated pending list
+      fs.writeFileSync("pending_orders.json", JSON.stringify(pending, null, 2));
+
+      // Add to fulfilled list
+      let fulfilled = [];
+      try {
+        fulfilled = JSON.parse(fs.readFileSync("fulfilled_orders.json", "utf8"));
+      } catch (err) {
+        fulfilled = [];
+      }
+
+      order.fulfilled_at = new Date().toISOString();
+      fulfilled.push(order);
+
+      fs.writeFileSync("fulfilled_orders.json", JSON.stringify(fulfilled, null, 2));
+
+      return res.json({
+        status: "Order marked as fulfilled",
+        order_id: order.order_id
       });
     }
 
