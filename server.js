@@ -1,3 +1,4 @@
+
 const express = require("express");
 const bodyParser = require("body-parser");
 const axios = require("axios");
@@ -23,7 +24,6 @@ app.post("/shopify", async (req, res) => {
   const { action, payload } = req.body;
 
   try {
-    // ✅ GET PRODUCTS
     if (action === "get_products") {
       const response = await axios.get(
         `https://${SHOPIFY_STORE}/admin/api/2023-07/products.json`,
@@ -37,7 +37,6 @@ app.post("/shopify", async (req, res) => {
       return res.json({ products: response.data.products });
     }
 
-    // ✅ ORDER PAID: Log to pending_orders.json
     if (action === "order_paid") {
       const order = payload;
       console.log("✅ New paid order received:", order.id);
@@ -66,11 +65,9 @@ app.post("/shopify", async (req, res) => {
       });
     }
 
-    // ✅ FULFILL ORDER: Move to fulfilled_orders.json
     if (action === "fulfill_order") {
       const { order_id } = payload;
 
-      // Load pending orders
       let pending = [];
       try {
         pending = JSON.parse(fs.readFileSync("pending_orders.json", "utf8"));
@@ -78,18 +75,14 @@ app.post("/shopify", async (req, res) => {
         return res.status(404).json({ error: "No pending orders found." });
       }
 
-      // Find and remove order
       const index = pending.findIndex(o => o.order_id === order_id);
       if (index === -1) {
         return res.status(404).json({ error: "Order not found in pending list." });
       }
 
       const order = pending.splice(index, 1)[0];
-
-      // Save updated pending list
       fs.writeFileSync("pending_orders.json", JSON.stringify(pending, null, 2));
 
-      // Add to fulfilled list
       let fulfilled = [];
       try {
         fulfilled = JSON.parse(fs.readFileSync("fulfilled_orders.json", "utf8"));
@@ -99,7 +92,6 @@ app.post("/shopify", async (req, res) => {
 
       order.fulfilled_at = new Date().toISOString();
       fulfilled.push(order);
-
       fs.writeFileSync("fulfilled_orders.json", JSON.stringify(fulfilled, null, 2));
 
       return res.json({
@@ -108,11 +100,77 @@ app.post("/shopify", async (req, res) => {
       });
     }
 
+    if (action === "add_product") {
+      const { title, cost_price, shipping_cost, markup_percent, description, image_url } = payload;
+
+      const platform_fee = 1.0;
+      const final_price = parseFloat(cost_price) + parseFloat(shipping_cost) + platform_fee + (parseFloat(cost_price) * (markup_percent / 100));
+      const rounded_price = final_price.toFixed(2);
+
+      const product = {
+        product: {
+          title,
+          body_html: description,
+          variants: [
+            {
+              price: rounded_price
+            }
+          ],
+          images: [
+            {
+              src: image_url
+            }
+          ]
+        }
+      };
+
+      const response = await axios.post(
+        `https://${SHOPIFY_STORE}/admin/api/2023-07/products.json`,
+        product,
+        {
+          headers: {
+            "X-Shopify-Access-Token": SHOPIFY_ACCESS_TOKEN,
+            "Content-Type": "application/json"
+          }
+        }
+      );
+
+      let productLog = [];
+      try {
+        productLog = JSON.parse(fs.readFileSync("products.json", "utf8"));
+      } catch (err) {
+        productLog = [];
+      }
+
+      productLog.push({
+        title,
+        price: rounded_price,
+        cost_price,
+        shipping_cost,
+        markup_percent,
+        created_at: new Date().toISOString()
+      });
+
+      fs.writeFileSync("products.json", JSON.stringify(productLog, null, 2));
+
+      return res.json({
+        status: "Product created successfully",
+        title,
+        final_price: rounded_price
+      });
+    }
+
     return res.status(400).json({ error: "Unknown action" });
   } catch (error) {
     console.error("❌ Error:", error.message);
     return res.status(500).json({ error: "Server error", details: error.message });
   }
+});
+
+app.listen(port, () => {
+  console.log(`Shopify bridge running on port ${port}`);
+});
+
 });
 
 app.listen(port, () => {
