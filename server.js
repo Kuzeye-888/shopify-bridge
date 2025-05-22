@@ -171,8 +171,3 @@ app.listen(port, () => {
   console.log(`Shopify bridge running on port ${port}`);
 });
 
-});
-
-app.listen(port, () => {
-  console.log(`Shopify bridge running on port ${port}`);
-});
